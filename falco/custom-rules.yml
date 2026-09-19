@@ -1,0 +1,70 @@
+# Custom Falco rules for homelab security monitoring
+
+- rule: Unexpected Shell in Container
+  desc: Detects shell spawned inside a container (possible container escape attempt)
+  condition: >
+    spawned_process and
+    container and
+    shell_procs and
+    not proc.pname in (shell_binaries) and
+    not container.image.repository in (trusted_images)
+  output: >
+    Shell spawned in container (user=%user.name container=%container.name
+    image=%container.image.repository shell=%proc.name parent=%proc.pname
+    cmdline=%proc.cmdline)
+  priority: WARNING
+  tags: [container, shell, security]
+
+- rule: Write to /etc in Container
+  desc: Detects writes to /etc inside a running container
+  condition: >
+    open_write and
+    container and
+    fd.name startswith /etc and
+    not proc.name in (package_mgmt_binaries)
+  output: >
+    Write to /etc in container (user=%user.name container=%container.name
+    image=%container.image.repository file=%fd.name proc=%proc.name)
+  priority: ERROR
+  tags: [container, filesystem, security]
+
+- rule: Privileged Container Started
+  desc: Detects when a privileged container is started
+  condition: >
+    container_started and
+    container.privileged=true
+  output: >
+    Privileged container started (user=%user.name container=%container.name
+    image=%container.image.repository)
+  priority: CRITICAL
+  tags: [container, privilege, security]
+
+- rule: K8s Secret Access
+  desc: Detects unexpected access to Kubernetes secrets via kubectl
+  condition: >
+    ka.verb in (get, list) and
+    ka.target.resource=secrets and
+    not ka.user.name in (allowed_k8s_users)
+  output: >
+    K8s secret accessed (user=%ka.user.name verb=%ka.verb
+    secret=%ka.target.name namespace=%ka.target.namespace)
+  priority: WARNING
+  source: k8s_audit
+  tags: [k8s, secrets, security]
+
+- macro: trusted_images
+  condition: >
+    container.image.repository in (
+      "nginx",
+      "prom/prometheus",
+      "grafana/grafana",
+      "hashicorp/vault"
+    )
+
+- macro: allowed_k8s_users
+  condition: >
+    ka.user.name in (
+      "system:serviceaccount:kube-system:kube-controller-manager",
+      "system:serviceaccount:kube-system:kube-scheduler",
+      "system:serviceaccount:flux-system:source-controller"
+    )
